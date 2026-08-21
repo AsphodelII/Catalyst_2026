@@ -10,8 +10,11 @@ import {
   TriangleAlert,
   CircleAlert,
   Send,
-  UserPlus,
   GitCommitHorizontal,
+  ChevronDown,
+  ChevronUp,
+  ChefHat,
+  MessageSquarePlus,
 } from 'lucide-react'
 import { AppShell } from '@/components/app-shell'
 import { ReadinessBadge, StatusPill } from '@/components/status-badges'
@@ -19,9 +22,30 @@ import { Button } from '@/components/ui/button'
 import { usePortfolio, type RecipeField } from '@/components/portfolio-store'
 import { cn } from '@/lib/utils'
 
-function FieldRow({ field }: { field: RecipeField }) {
+function FieldRow({
+  field,
+  sousChef,
+  onAddComment,
+}: {
+  field: RecipeField
+  sousChef: string | null
+  onAddComment: (fieldKey: string, text: string) => void
+}) {
   const complete = field.complete
   const danger = field.severity === 'danger'
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [showCommentBox, setShowCommentBox] = useState(false)
+  const [commentText, setCommentText] = useState('')
+  const isLong = field.value && field.value.length > 50
+
+  const handleSubmitComment = () => {
+    if (commentText.trim()) {
+      onAddComment(field.key, commentText.trim())
+      setCommentText('')
+      setShowCommentBox(false)
+    }
+  }
+
   return (
     <div className="flex gap-3 py-4">
       <span
@@ -43,12 +67,29 @@ function FieldRow({ field }: { field: RecipeField }) {
         )}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {field.label}
-        </p>
+        {/* Field label + expand toggle */}
+        <button
+          onClick={() => isLong && setIsExpanded(!isExpanded)}
+          className={cn(
+            'group flex items-center justify-between w-full text-left',
+            isLong ? 'cursor-pointer' : 'cursor-default',
+          )}
+        >
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {field.label}
+          </p>
+          {isLong && (
+            <span className="text-muted-foreground transition-transform group-hover:text-foreground">
+              {isExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+            </span>
+          )}
+        </button>
+
+        {/* Field value */}
         <p
           className={cn(
-            'mt-1 text-sm text-pretty',
+            'mt-1 text-sm text-pretty whitespace-pre-wrap transition-all',
+            !isExpanded && isLong && 'line-clamp-1',
             complete
               ? 'text-foreground'
               : danger
@@ -59,6 +100,63 @@ function FieldRow({ field }: { field: RecipeField }) {
           {field.value ??
             (danger ? 'Missing — required for handover' : 'Incomplete — needs detail')}
         </p>
+
+        {/* Existing Sous Chef comment */}
+        {field.peerComment && (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/40 dark:bg-amber-950/30">
+            <div className="mb-1 flex items-center gap-1.5">
+              <ChefHat className="size-3.5 text-amber-600 dark:text-amber-400" aria-hidden />
+              <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                Sous Chef · {field.peerComment.author}
+              </span>
+            </div>
+            <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-200">
+              {field.peerComment.text}
+            </p>
+          </div>
+        )}
+
+        {/* Add tip section */}
+        {sousChef && (
+          <div className="mt-2">
+            {!showCommentBox ? (
+              <button
+                onClick={() => setShowCommentBox(true)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <MessageSquarePlus className="size-3.5" />
+                {field.peerComment ? 'Update tip' : 'Add Sous Chef tip'}
+              </button>
+            ) : (
+              <div className="mt-2 space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Tip as <span className="font-medium text-foreground">{sousChef}</span>
+                </p>
+                <textarea
+                  className="w-full rounded-md border border-border bg-background p-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  rows={3}
+                  placeholder="Leave a tip or flag for the owner..."
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSubmitComment}
+                    className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                  >
+                    Submit tip
+                  </button>
+                  <button
+                    onClick={() => { setShowCommentBox(false); setCommentText('') }}
+                    className="rounded-md border border-border px-3 py-1 text-xs font-medium text-foreground hover:bg-secondary transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -66,7 +164,7 @@ function FieldRow({ field }: { field: RecipeField }) {
 
 export default function RecipePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const { getProject, assignBackup } = usePortfolio()
+  const { getProject, addPeerComment } = usePortfolio()
   const project = getProject(id)
   const [requested, setRequested] = useState(false)
 
@@ -75,6 +173,7 @@ export default function RecipePage({ params }: { params: Promise<{ id: string }>
   const ready = project.fields.filter((f) => f.complete)
   const missing = project.fields.filter((f) => !f.complete)
   const commit = project.fields.find((f) => f.key === 'code')?.value
+  const peerCommentCount = project.fields.filter((f) => f.peerComment).length
 
   return (
     <AppShell>
@@ -124,22 +223,29 @@ export default function RecipePage({ params }: { params: Promise<{ id: string }>
             <div className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-secondary/40 p-4 sm:grid-cols-2">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Researcher / Owner
+                  Head Baker / Owner
                 </p>
                 <p className="mt-1 text-sm font-medium text-foreground">{project.owner}</p>
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Backup owner
+                  Sous Chef
                 </p>
-                <p
-                  className={cn(
-                    'mt-1 text-sm font-medium',
-                    project.backupOwner ? 'text-foreground' : 'text-danger',
+                <div className="mt-1 flex items-center gap-1.5">
+                  {project.sousChef ? (
+                    <>
+                      <ChefHat className="size-3.5 text-amber-500" />
+                      <span className="text-sm font-medium text-foreground">{project.sousChef}</span>
+                      {peerCommentCount > 0 && (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+                          {peerCommentCount} tip{peerCommentCount !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-sm font-medium text-warning">Not assigned</span>
                   )}
-                >
-                  {project.backupOwner ?? 'Not assigned'}
-                </p>
+                </div>
               </div>
             </div>
 
@@ -155,11 +261,19 @@ export default function RecipePage({ params }: { params: Promise<{ id: string }>
 
             {/* Field rows */}
             <div className="mt-2 divide-y divide-border">
-              {project.fields
-                .filter((f) => f.key !== 'backup')
-                .map((f) => (
-                  <FieldRow key={f.key} field={f} />
-                ))}
+              {project.fields.map((f) => (
+                <FieldRow
+                  key={f.key}
+                  field={f}
+                  sousChef={project.sousChef}
+                  onAddComment={(fieldKey, text) =>
+                    addPeerComment(project.id, fieldKey, {
+                      author: project.sousChef ?? 'Sous Chef',
+                      text,
+                    })
+                  }
+                />
+              ))}
             </div>
           </div>
         </div>
@@ -173,6 +287,23 @@ export default function RecipePage({ params }: { params: Promise<{ id: string }>
             <div className="mt-3">
               <ReadinessBadge readiness={project.readiness} />
             </div>
+
+            {/* Sous Chef summary */}
+            {project.sousChef && (
+              <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/40 dark:bg-amber-950/20">
+                <div className="flex items-center gap-1.5">
+                  <ChefHat className="size-4 text-amber-600 dark:text-amber-400" />
+                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                    Sous Chef: {project.sousChef}
+                  </p>
+                </div>
+                <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                  {peerCommentCount > 0
+                    ? `${peerCommentCount} tip${peerCommentCount !== 1 ? 's' : ''} left on this recipe.`
+                    : 'No tips left yet.'}
+                </p>
+              </div>
+            )}
 
             <div className="mt-5">
               <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-success">
@@ -234,15 +365,6 @@ export default function RecipePage({ params }: { params: Promise<{ id: string }>
                     Request Missing Context
                   </>
                 )}
-              </Button>
-              <Button
-                variant="outline"
-                className="h-10 w-full gap-2"
-                onClick={() => assignBackup(project.id, 'Daniel Kim')}
-                disabled={!!project.backupOwner}
-              >
-                <UserPlus className="size-4" aria-hidden />
-                {project.backupOwner ? `Backup: ${project.backupOwner}` : 'Assign Backup Owner'}
               </Button>
               {requested && (
                 <p className="pt-1 text-center text-xs text-muted-foreground">

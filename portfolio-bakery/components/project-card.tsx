@@ -1,3 +1,5 @@
+'use client'
+
 import Link from 'next/link'
 import { ArrowRight, CircleCheck, CircleAlert } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
@@ -43,7 +45,7 @@ export function ProjectCard({
         </span>
       </div>
 
-      <div className="mt-auto pt-5">
+      <div className="mt-auto pt-5 flex flex-col gap-2">
         <Link
           href={`/recipe/${project.id}`}
           className={cn(
